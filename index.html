@@ -142,7 +142,28 @@ const storageKey='hazalsJournal_v1';
 let data=JSON.parse(localStorage.getItem(storageKey)||'null')||{tasks:{},marks:{},events:[],birthdays:[{id:'kerem',name:'Kerem',date:'04-21',special:true}],categories:defaultCats,settings:{weekStart:1,theme:'#d979a5',fontSize:'normal',notifications:false}};
 if(!Array.isArray(data.events))data.events=[];let currentMonth=new Date(today.getFullYear(),today.getMonth(),1),selectedKey=dateKey(today),activeView='home',lastCalendarTap={key:null,time:0};
 function save(){localStorage.setItem(storageKey,JSON.stringify(data))}
-function tasksFor(k){return data.tasks[k]||[]}
+function tasksFor(k){
+ const target=parseDate(k); data.tasks[k]=data.tasks[k]||[];
+ // Materialize scheduled repetitions as independent task occurrences, so each date can be checked off separately.
+ for(const [baseKey,items] of Object.entries(data.tasks)){
+  if(baseKey===k) continue;
+  const base=parseDate(baseKey);
+  for(const t of items){
+   if(!t.repeat||t.repeat==='Never'||t.recurringSource) continue;
+   const diff=Math.round((target-base)/86400000); if(diff<=0) continue;
+   let match=false;
+   if(t.repeat==='Daily') match=true;
+   else if(t.repeat==='Weekly') match=diff%7===0;
+   else if(t.repeat==='Monthly') match=target.getDate()===base.getDate();
+   else if(t.repeat==='Yearly') match=target.getDate()===base.getDate()&&target.getMonth()===base.getMonth();
+   if(!match) continue;
+   const source=t.id||`${baseKey}:${t.title}`;
+   const exists=data.tasks[k].some(x=>x.recurringSource===source);
+   if(!exists) data.tasks[k].push({...t,id:undefined,repeat:'Never',recurringSource:source,done:false});
+  }
+ }
+ return data.tasks[k];
+}
 function allSymbols(){return [...symbols,...(data.customSymbols||[])]}
 function birthdayFor(d){return (data.birthdays||[]).filter(b=>b.date===`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)}
 function markerFor(d){let b=birthdayFor(d);if(b.some(x=>x.special))return '♥';return data.marks[dateKey(d)]|| (b.length?'🎂':'')}
@@ -167,10 +188,17 @@ function transitionToDay(source){
   {left:Math.max(5,target.left)+'px',top:Math.max(5,target.top)+'px',width:Math.max(0,target.width)+'px',height:Math.max(0,target.height)+'px',borderRadius:'25px',opacity:.12,transform:'scale(1.01)'}
  ],{duration:690,easing:'cubic-bezier(.22,.78,.18,1)',fill:'forwards'});
  const dots=[...dayView.querySelectorAll('.task-check')];
- const morphs=movers.map((m,i)=>{const dot=dots[i];if(!dot)return null;const r=dot.getBoundingClientRect();dot.classList.add('morph-target-hidden');return m.animate([
-  {left:taskBars[i].rect.left+'px',top:taskBars[i].rect.top+'px',width:taskBars[i].rect.width+'px',height:taskBars[i].rect.height+'px',borderRadius:'5px',opacity:1,transform:'scale(1)'},
-  {left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',borderRadius:'50%',opacity:.98,transform:'scale(1.04)'}
- ],{duration:620,delay:90+i*38,easing:'cubic-bezier(.2,.8,.2,1)',fill:'forwards'})});
+ const morphs=movers.map((m,i)=>{const dot=dots[i];if(!dot)return null;const r=dot.getBoundingClientRect();dot.classList.add('morph-target-hidden');const start=taskBars[i].rect;
+ // Let each compact month-view bar bloom into a readable pill before it
+ // narrows into the checklist's checkbox. This makes the transformation feel continuous.
+ const expandedWidth=Math.min(210,Math.max(112,dayView.getBoundingClientRect().width*.58));
+ const midLeft=Math.max(8,Math.min(window.innerWidth-expandedWidth-8,(start.left+r.left)/2-(expandedWidth-start.width)/2));
+ const midTop=(start.top+r.top)/2-5;
+ return m.animate([
+  {left:start.left+'px',top:start.top+'px',width:start.width+'px',height:start.height+'px',borderRadius:'6px',opacity:1,transform:'scale(1)'},
+  {left:midLeft+'px',top:midTop+'px',width:expandedWidth+'px',height:'34px',borderRadius:'17px',opacity:1,transform:'scale(1.025)',offset:.52},
+  {left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',borderRadius:'50%',opacity:.98,transform:'scale(1.08)'}
+ ],{duration:760,delay:70+i*42,easing:'cubic-bezier(.22,.78,.18,1)',fill:'forwards'})});
  let finished=false;const finish=()=>{if(finished)return;finished=true;overlay.remove();movers.forEach(m=>m.remove());dots.forEach(d=>d.classList.remove('morph-target-hidden'));dayView.classList.remove('transition-hidden');dayView.classList.add('transition-visible');setTimeout(()=>dayView.classList.remove('transition-visible'),700)};
  Promise.all([tileAnim.finished,...morphs.filter(Boolean).map(a=>a.finished)]).then(finish).catch(finish);
  setTimeout(finish,1100);
@@ -234,8 +262,8 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function taskModal(index=null){
  let old=index===null?{}:tasksFor(selectedKey)[index],cats=data.categories||defaultCats;
  let catOpts='<option value="">No category</option>'+cats.flatMap(c=>c.subs.map(s=>`<option value="${esc(s[1])}" ${old.category===s[1]?'selected':''}>${esc(c.name)} · ${esc(s[1])}</option>`)).join('');
- openModal(index===null?'New task':'Edit task',`<label class="field-label">TASK</label><input class="field" id="taskTitle" maxlength="90" placeholder="What would you like to do?" value="${esc(old.title||'')}"><div class="form-row"><div style="flex:1"><label class="field-label">FROM</label><input class="field" type="time" id="taskTimeFrom" value="${esc(old.timeFrom||old.time||'')}"></div><div style="flex:1"><label class="field-label">UNTIL</label><input class="field" type="time" id="taskTimeTo" value="${esc(old.timeTo||'')}"></div></div><div class="form-row"><div style="flex:1"><label class="field-label">PRIORITY · OPTIONAL</label><select class="field" id="taskPriority"><option value="">None</option><option ${old.priority==='Low'?'selected':''}>Low</option><option ${old.priority==='Medium'?'selected':''}>Medium</option><option ${old.priority==='High'?'selected':''}>High</option></select></div></div><label class="field-label">CATEGORY · OPTIONAL</label><select class="field" id="taskCategory">${catOpts}</select><button class="primary full" id="saveTask">${index===null?'Add task':'Save changes'}</button>${index!==null?'<button class="text-btn" style="width:100%;margin-top:8px;color:#b45c80" id="deleteTask">Delete task</button>':''}`);
- $('saveTask').onclick=()=>{let title=$('taskTitle').value.trim();if(!title){showToast('Add a task name first');return}let arr=tasksFor(selectedKey);let from=$('taskTimeFrom').value,to=$('taskTimeTo').value;if(from&&to&&to<from){showToast('End time must be after start time');return}let t={title,timeFrom:from,timeTo:to,priority:$('taskPriority').value,category:$('taskCategory').value,done:old.done||false};if(index===null)arr.push(t);else arr[index]=t;data.tasks[selectedKey]=arr;save();closeModal();renderDay();renderHome();renderCalendar();showToast('Saved with love ♡')};
+ openModal(index===null?'New task':'Edit task',`<label class="field-label">TASK</label><input class="field" id="taskTitle" maxlength="90" placeholder="What would you like to do?" value="${esc(old.title||'')}"><div class="form-row"><div style="flex:1"><label class="field-label">FROM</label><input class="field" type="time" id="taskTimeFrom" value="${esc(old.timeFrom||old.time||'')}"></div><div style="flex:1"><label class="field-label">UNTIL</label><input class="field" type="time" id="taskTimeTo" value="${esc(old.timeTo||'')}"></div></div><div class="form-row"><div style="flex:1"><label class="field-label">PRIORITY · OPTIONAL</label><select class="field" id="taskPriority"><option value="">None</option><option ${old.priority==='Low'?'selected':''}>Low</option><option ${old.priority==='Medium'?'selected':''}>Medium</option><option ${old.priority==='High'?'selected':''}>High</option></select></div></div><label class="field-label">CATEGORY · OPTIONAL</label><select class="field" id="taskCategory">${catOpts}</select><label class="field-label">REPEAT</label><select class="field" id="taskRepeat"><option value="Never" ${!old.repeat||old.repeat==='Never'?'selected':''}>Never</option><option value="Yearly" ${old.repeat==='Yearly'?'selected':''}>Yearly</option><option value="Monthly" ${old.repeat==='Monthly'?'selected':''}>Monthly</option><option value="Weekly" ${old.repeat==='Weekly'?'selected':''}>Weekly</option><option value="Daily" ${old.repeat==='Daily'?'selected':''}>Daily</option></select><p class="small muted">Repeating tasks are added automatically on matching future dates.</p><button class="primary full" id="saveTask">${index===null?'Add task':'Save changes'}</button>${index!==null?'<button class="text-btn" style="width:100%;margin-top:8px;color:#b45c80" id="deleteTask">Delete task</button>':''}`);
+ $('saveTask').onclick=()=>{let title=$('taskTitle').value.trim();if(!title){showToast('Add a task name first');return}let arr=tasksFor(selectedKey);let from=$('taskTimeFrom').value,to=$('taskTimeTo').value;if(from&&to&&to<from){showToast('End time must be after start time');return}let t={...old,id:old.id||`task-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,title,timeFrom:from,timeTo:to,priority:$('taskPriority').value,category:$('taskCategory').value,repeat:$('taskRepeat').value,done:old.done||false};if(index===null)arr.push(t);else arr[index]=t;data.tasks[selectedKey]=arr;save();closeModal();renderDay();renderHome();renderCalendar();showToast('Saved with love ♡')};
  if(index!==null)$('deleteTask').onclick=()=>{let arr=tasksFor(selectedKey);arr.splice(index,1);data.tasks[selectedKey]=arr;save();closeModal();renderDay();renderHome();renderCalendar();showToast('Task deleted')};
 }
 function markModal(){
