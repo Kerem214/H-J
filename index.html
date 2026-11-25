@@ -45,6 +45,8 @@ body,#app{overscroll-behavior:none} .calendar-grid{grid-template-rows:repeat(6,m
 @keyframes checklistReveal{from{opacity:.5;transform:translateY(12px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes taskReveal{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:390px){.day{padding-left:1px;padding-right:1px;border-radius:11px}.weekdays,.calendar-grid{column-gap:3px}.event-segment{font-size:6px}.task-chip{font-size:6px}.month-title{font-size:22px}.month-nav{gap:4px}.month-nav button{width:32px;height:34px}}
+
+.ayah-card{background:linear-gradient(150deg,#fff 0%,#fff5f9 100%);border-color:#efd8e3;padding:20px 18px}.ayah-arabic{font-family:"Geeza Pro", "Noto Naskh Arabic", serif;font-size:29px;line-height:1.9;text-align:center;color:#9d5878;padding:4px 2px 8px}.ayah-translation{font-size:17px;line-height:1.55}.ayah-note{text-align:center;color:var(--muted);font-size:10px;letter-spacing:.45px;margin-top:12px}.slide-in{animation:softSlideIn .38s cubic-bezier(.2,.75,.25,1) both}@keyframes softSlideIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
 </style>
 </head>
 <body>
@@ -69,10 +71,12 @@ body,#app{overscroll-behavior:none} .calendar-grid{grid-template-rows:repeat(6,m
     <div id="homeTasks" style="margin-top:10px"></div>
     <button class="text-btn" id="homeAddTask">+ Add a task</button>
   </div>
-  <div class="card daily-quote-card">
-    <div class="daily-quote-label">✧ QUOTE OF THE DAY ✧</div>
-    <div class="quote" id="dailyQuote"></div>
-    <div class="quote-by">A little reminder, just for today ♡</div>
+  <div class="card daily-quote-card ayah-card">
+    <div class="daily-quote-label">✧ AYAH OF THE DAY ✧</div>
+    <div class="ayah-arabic" id="dailyAyahArabic" lang="ar" dir="rtl"></div>
+    <div class="quote ayah-translation" id="dailyAyahTranslation"></div>
+    <div class="quote-by" id="dailyAyahReference"></div>
+    <div class="ayah-note">A moment of reflection · One verse for today</div>
   </div>
   <button class="primary full" id="openCalendar">♡ &nbsp; Open Calendar &nbsp; →</button>
 </section>
@@ -135,7 +139,15 @@ const dateKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-$
 const parseDate=k=>{let [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
 const fmt=(d,opt={weekday:'long',day:'numeric',month:'long'})=>new Intl.DateTimeFormat('en-GB',opt).format(d);
 const today=new Date(); today.setHours(0,0,0,0);
-const quotes=["You are allowed to grow at your own pace.","Make space for the things that make you feel alive.","Little by little, a little becomes a lot.","Bloom in your own time. ♡","You deserve the same kindness you give to others.","A beautiful life is made of little moments.","Trust the timing of your life.","Give yourself room to become.","Today is another chance to begin.","Softness is a strength, too.","You don't have to do it all at once.","Let today be gentle with you."];
+const dailyAyat=[
+ {ar:"فَإِنَّ مَعَ الْعُسْرِ يُسْرًا",de:"Gewiss, mit der Erschwernis kommt Erleichterung.",ref:"Sure Ash-Sharh · 94:5"},
+ {ar:"أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ",de:"Wahrlich, im Gedenken Allahs finden die Herzen Ruhe.",ref:"Sure Ar-Ra'd · 13:28"},
+ {ar:"لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا",de:"Allah fordert von keiner Seele mehr, als sie zu leisten vermag.",ref:"Sure Al-Baqarah · 2:286"},
+ {ar:"وَبَشِّرِ الصَّابِرِينَ",de:"Und verkünde den Standhaften frohe Botschaft.",ref:"Sure Al-Baqarah · 2:155"},
+ {ar:"وَهُوَ مَعَكُمْ أَيْنَ مَا كُنْتُمْ",de:"Und Er ist mit euch, wo immer ihr auch seid.",ref:"Sure Al-Hadid · 57:4"},
+ {ar:"إِنَّ اللَّهَ مَعَ الصَّابِرِينَ",de:"Gewiss, Allah ist mit den Standhaften.",ref:"Sure Al-Baqarah · 2:153"},
+ {ar:"وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ",de:"Und wer auf Allah vertraut, dem ist Er genug.",ref:"Sure At-Talaq · 65:3"}
+];
 const symbols=[['♡','Heart'],['☆','Star'],['🌸','Flower'],['🎁','Gift'],['☀️','Sun'],['☾','Moon'],['✈️','Travel'],['♫','Music'],['👑','Crown'],['✨','Sparkles'],['☕','Coffee'],['📚','Books'],['🎀','Bow'],['🦋','Butterfly'],['🌷','Tulip'],['🍓','Strawberry'],['🎨','Art'],['🎬','Movie'],['🧸','Teddy'],['🩰','Ballet']];
 const defaultCats=[{name:'Sport',subs:[['🎾','Tennis'],['🏋️','Fitness']]},{name:'Bildung',subs:[['📖','Lernen'],['🎓','Uni']]},{name:'Privat',subs:[['♡','Freunde'],['🏡','Familie'],['🛍️','Einkaufen'],['✨','Selfcare']]}];
 const storageKey='hazalsJournal_v1';
@@ -169,40 +181,15 @@ function birthdayFor(d){return (data.birthdays||[]).filter(b=>b.date===`${String
 function markerFor(d){let b=birthdayFor(d);if(b.some(x=>x.special))return '♥';return data.marks[dateKey(d)]|| (b.length?'🎂':'')}
 function showToast(s){let t=$('toast');t.textContent=s;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2100)}
 function setView(v){activeView=v;document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));$(v+'View').classList.add('active');$('homeBtn').style.display=v==='home'?'none':'block';$('settingsBtn').style.display=v==='settings'?'none':'block';$('calendarBtn').style.display=(v==='settings'||v==='day')?'block':'none';if(v==='calendar')renderCalendar();if(v==='home')renderHome();if(v==='day')renderDay()}
-function transitionToDay(source){
+function transitionToDay(){
  const dayView=$('dayView');
- if(!source){setView('day');dayView.classList.add('transition-visible');setTimeout(()=>dayView.classList.remove('transition-visible'),700);return}
- // Capture the selected calendar tile and its task bars before switching views.
- const from=source.getBoundingClientRect();
- const taskBars=[...source.querySelectorAll('.task-chip')].map(el=>({el,rect:el.getBoundingClientRect(),text:el.textContent}));
- const overlay=source.cloneNode(true);overlay.classList.add('day-transition-overlay');overlay.removeAttribute('data-date');
- Object.assign(overlay.style,{left:from.left+'px',top:from.top+'px',width:from.width+'px',height:from.height+'px',borderRadius:getComputedStyle(source).borderRadius});
- document.body.appendChild(overlay);
- // Separate copies of each task bar will travel into the checklist's round check controls.
- const movers=taskBars.map(item=>{const m=item.el.cloneNode(true);m.classList.add('task-morph-overlay');const r=item.rect;Object.assign(m.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});document.body.appendChild(m);return m});
  setView('day');
- dayView.classList.remove('transition-hidden','transition-visible');dayView.classList.add('transition-hidden');
- const target=dayView.getBoundingClientRect();
- const tileAnim=overlay.animate([
-  {left:from.left+'px',top:from.top+'px',width:from.width+'px',height:from.height+'px',borderRadius:getComputedStyle(source).borderRadius,opacity:1,transform:'scale(1)'},
-  {left:Math.max(5,target.left)+'px',top:Math.max(5,target.top)+'px',width:Math.max(0,target.width)+'px',height:Math.max(0,target.height)+'px',borderRadius:'25px',opacity:.12,transform:'scale(1.01)'}
- ],{duration:690,easing:'cubic-bezier(.22,.78,.18,1)',fill:'forwards'});
- const dots=[...dayView.querySelectorAll('.task-check')];
- const morphs=movers.map((m,i)=>{const dot=dots[i];if(!dot)return null;const r=dot.getBoundingClientRect();dot.classList.add('morph-target-hidden');const start=taskBars[i].rect;
- // Let each compact month-view bar bloom into a readable pill before it
- // narrows into the checklist's checkbox. This makes the transformation feel continuous.
- const expandedWidth=Math.min(210,Math.max(112,dayView.getBoundingClientRect().width*.58));
- const midLeft=Math.max(8,Math.min(window.innerWidth-expandedWidth-8,(start.left+r.left)/2-(expandedWidth-start.width)/2));
- const midTop=(start.top+r.top)/2-5;
- return m.animate([
-  {left:start.left+'px',top:start.top+'px',width:start.width+'px',height:start.height+'px',borderRadius:'6px',opacity:1,transform:'scale(1)'},
-  {left:midLeft+'px',top:midTop+'px',width:expandedWidth+'px',height:'34px',borderRadius:'17px',opacity:1,transform:'scale(1.025)',offset:.52},
-  {left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px',borderRadius:'50%',opacity:.98,transform:'scale(1.08)'}
- ],{duration:760,delay:70+i*42,easing:'cubic-bezier(.22,.78,.18,1)',fill:'forwards'})});
- let finished=false;const finish=()=>{if(finished)return;finished=true;overlay.remove();movers.forEach(m=>m.remove());dots.forEach(d=>d.classList.remove('morph-target-hidden'));dayView.classList.remove('transition-hidden');dayView.classList.add('transition-visible');setTimeout(()=>dayView.classList.remove('transition-visible'),700)};
- Promise.all([tileAnim.finished,...morphs.filter(Boolean).map(a=>a.finished)]).then(finish).catch(finish);
- setTimeout(finish,1100);
+ dayView.classList.remove('slide-in');
+ void dayView.offsetWidth;
+ dayView.classList.add('slide-in');
+ setTimeout(()=>dayView.classList.remove('slide-in'),460);
 }
+
 function openModal(title,html){$('modalTitle').textContent=title;$('modalBody').innerHTML=html;$('modalBackdrop').classList.add('show')}
 function closeModal(){$('modalBackdrop').classList.remove('show')}
 function renderHome(){
@@ -211,7 +198,7 @@ function renderHome(){
  let ts=tasksFor(dateKey(today)),done=ts.filter(t=>t.done).length,p=ts.length?Math.round(done/ts.length*100):0;
  $('homeTaskCount').textContent=`${done} / ${ts.length}`;$('homeProgress').style.width=p+'%';$('progressText').textContent=ts.length?(p===100?'Everything done. Well done, Hazal! ♡':`${p}% completed today`):'A fresh day awaits ♡';
  $('homeTasks').innerHTML=ts.length?ts.map((t,i)=>`<div class="task-preview ${t.done?'done':''}"><button class="home-task-toggle" data-home-toggle="${i}" aria-label="${t.done?'Mark as not done':'Complete'}: ${esc(t.title)}"><span class="dot-check ${t.done?'done':''}">${t.done?'✓':''}</span><span class="task-name">${esc(t.title)}</span></button>${t.category?`<span class="category-pill">${esc(t.category)}</span>`:''}</div>`).join(''):'<div class="empty">No plans yet. Make today yours ♡</div>';$('homeTasks').querySelectorAll('[data-home-toggle]').forEach(b=>b.onclick=()=>{let list=tasksFor(dateKey(today));list[+b.dataset.homeToggle].done=!list[+b.dataset.homeToggle].done;save();renderHome()});
- const n=Math.floor((today-new Date(today.getFullYear(),0,0))/86400000);$('dailyQuote').textContent=quotes[(today.getFullYear()*37+n)%quotes.length];
+ const n=Math.floor((today-new Date(today.getFullYear(),0,0))/86400000);const ayah=dailyAyat[(today.getFullYear()*37+n)%dailyAyat.length];$('dailyAyahArabic').textContent=ayah.ar;$('dailyAyahTranslation').textContent='“'+ayah.de+'”';$('dailyAyahReference').textContent=ayah.ref;
 }
 function eventOccursOn(ev,k){return k>=ev.start&&k<=ev.end}
 function renderCalendar(){
@@ -229,7 +216,7 @@ function renderCalendar(){
  let stack=visible.join('')+(hidden?`<div class="more-chip">+${hidden} more</div>`:'');
  out+=`<button class="day ${isOther?'other':''} ${isToday?'today':''} ${isSel?'selected':''} ${b?'has-birthday':''}" data-date="${k}"><span class="day-num">${d.getDate()}</span><span class="day-task-summary">${ts.length?`${done}/${ts.length} tasks`:m||' '}</span><span class="event-stack">${stack}</span></button>`}
  $('calendarGrid').innerHTML=out;
- $('calendarGrid').querySelectorAll('.day').forEach(btn=>btn.addEventListener('click',()=>{let key=btn.dataset.date,now=Date.now(),same=lastCalendarTap.key===key&&now-lastCalendarTap.time<850;selectedKey=key;let d=parseDate(selectedKey);if(d.getMonth()!==currentMonth.getMonth())currentMonth=new Date(d.getFullYear(),d.getMonth(),1);lastCalendarTap={key,time:now};if(same){transitionToDay(btn)}else renderCalendar()}));
+ $('calendarGrid').querySelectorAll('.day').forEach(btn=>btn.addEventListener('click',()=>{let key=btn.dataset.date;selectedKey=key;let d=parseDate(selectedKey);if(d.getMonth()!==currentMonth.getMonth())currentMonth=new Date(d.getFullYear(),d.getMonth(),1);transitionToDay()}));
  renderSelectedDay();
 }
 function eventModal(eventId=null){
@@ -298,7 +285,7 @@ function checkForegroundReminders(){
  (tasksFor(day)||[]).forEach((t,i)=>{let tm=t.timeFrom||t.time;if(tm===`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`&&!t.done)send(`task-${minute}-${i}`,`A little reminder ♡`,t.title)});
 }
 function applyTheme(){let c=data.settings.theme||'#d979a5';document.documentElement.style.setProperty('--pink',c);document.documentElement.style.setProperty('--pink-dark',c);document.body.style.fontSize=data.settings.fontSize==='small'?'14px':data.settings.fontSize==='large'?'17px':'15px'}
-$('homeBtn').onclick=()=>setView('home');$('calendarBtn').onclick=()=>{currentMonth=new Date(today.getFullYear(),today.getMonth(),1);selectedKey=dateKey(today);setView('calendar')};$('settingsBtn').onclick=()=>setView('settings');$('openCalendar').onclick=()=>setView('calendar');$('todayBtn').onclick=()=>{currentMonth=new Date(today.getFullYear(),today.getMonth(),1);selectedKey=dateKey(today);renderCalendar()};$('homeAddTask').onclick=()=>{selectedKey=dateKey(today);taskModal()};$('prevMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()-1);renderCalendar()};$('nextMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()+1);renderCalendar()};$('addEventBtn').onclick=eventModal;$('markDayBtn').onclick=markModal;$('dayMarkBtn').onclick=markModal;$('viewDayTasks').onclick=()=>transitionToDay(null);$('dayBack').onclick=()=>setView('calendar');$('addTaskBtn').onclick=()=>taskModal();$('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal()};$('settingsView').querySelectorAll('.settings-item').forEach(item=>{item.style.cursor='pointer';item.onclick=()=>settingModal(item.querySelector('[data-setting]').dataset.setting)});$('exportBackup').onclick=downloadBackup;$('importBackupBtn').onclick=()=>$('importBackupFile').click();$('importBackupFile').onchange=e=>{if(e.target.files?.[0])importBackup(e.target.files[0]);e.target.value=''};
+$('homeBtn').onclick=()=>setView('home');$('calendarBtn').onclick=()=>{currentMonth=new Date(today.getFullYear(),today.getMonth(),1);selectedKey=dateKey(today);setView('calendar')};$('settingsBtn').onclick=()=>setView('settings');$('openCalendar').onclick=()=>setView('calendar');$('todayBtn').onclick=()=>{currentMonth=new Date(today.getFullYear(),today.getMonth(),1);selectedKey=dateKey(today);renderCalendar()};$('homeAddTask').onclick=()=>{selectedKey=dateKey(today);taskModal()};$('prevMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()-1);renderCalendar()};$('nextMonth').onclick=()=>{currentMonth.setMonth(currentMonth.getMonth()+1);renderCalendar()};$('addEventBtn').onclick=eventModal;$('markDayBtn').onclick=markModal;$('dayMarkBtn').onclick=markModal;$('viewDayTasks').onclick=()=>transitionToDay();$('dayBack').onclick=()=>setView('calendar');$('addTaskBtn').onclick=()=>taskModal();$('modalClose').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal()};$('settingsView').querySelectorAll('.settings-item').forEach(item=>{item.style.cursor='pointer';item.onclick=()=>settingModal(item.querySelector('[data-setting]').dataset.setting)});$('exportBackup').onclick=downloadBackup;$('importBackupBtn').onclick=()=>$('importBackupFile').click();$('importBackupFile').onchange=e=>{if(e.target.files?.[0])importBackup(e.target.files[0]);e.target.value=''};
 applyTheme();renderHome();renderCalendar();setView('home');setInterval(checkForegroundReminders,20000);
 </script>
 </body>
