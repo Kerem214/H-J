@@ -216,7 +216,7 @@ function renderCalendar(){
  let stack=visible.join('')+(hidden?`<div class="more-chip">+${hidden} more</div>`:'');
  out+=`<button class="day ${isOther?'other':''} ${isToday?'today':''} ${isSel?'selected':''} ${b?'has-birthday':''}" data-date="${k}"><span class="day-num">${d.getDate()}</span><span class="day-task-summary">${ts.length?`${done}/${ts.length} tasks`:m||' '}</span><span class="event-stack">${stack}</span></button>`}
  $('calendarGrid').innerHTML=out;
- $('calendarGrid').querySelectorAll('.day').forEach(btn=>btn.addEventListener('click',()=>{let key=btn.dataset.date;selectedKey=key;let d=parseDate(selectedKey);if(d.getMonth()!==currentMonth.getMonth())currentMonth=new Date(d.getFullYear(),d.getMonth(),1);transitionToDay()}));
+ $('calendarGrid').querySelectorAll('.day').forEach(btn=>btn.addEventListener('click',()=>{const key=btn.dataset.date;const now=Date.now();const isSecondTap=lastCalendarTap.key===key&&(now-lastCalendarTap.time)<650;selectedKey=key;const d=parseDate(selectedKey);if(d.getMonth()!==currentMonth.getMonth())currentMonth=new Date(d.getFullYear(),d.getMonth(),1);lastCalendarTap={key,time:now};renderCalendar();if(isSecondTap){lastCalendarTap={key:null,time:0};transitionToDay()}}));
  renderSelectedDay();
 }
 function eventModal(eventId=null){
@@ -290,3 +290,10 @@ applyTheme();renderHome();renderCalendar();setView('home');setInterval(checkFore
 </script>
 </body>
 </html>
+/* iPhone viewport: allow Home and Calendar content to scroll inside the app shell. */
+#app{min-height:0;overflow:hidden}
+.view.active{display:block;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;touch-action:pan-y}
+#calendarView.active,#homeView.active,#settingsView.active{height:100%;max-height:100%;padding-bottom:calc(30px + env(safe-area-inset-bottom));}
+#calendarView .calendar-grid{grid-template-rows:none;grid-auto-rows:minmax(76px,auto)}
+#homeView .ayah-card{margin-bottom:18px}
+#homeView #openCalendar{margin-bottom:calc(24px + env(safe-area-inset-bottom))}
